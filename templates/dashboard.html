@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FundLyte Trading Platform</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0e1a; color: #e0e6ff; font-family: 'Segoe UI', sans-serif; }
+  .header { background: linear-gradient(135deg, #1a2040, #0d1530); padding: 20px 30px; border-bottom: 1px solid #2a3560; display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 24px; color: #4af0a0; letter-spacing: 1px; }
+  .header .status { font-size: 13px; color: #8899cc; }
+  .live-badge { background: #1a4a2a; color: #4af0a0; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 24px; }
+  .card { background: #111827; border: 1px solid #1e2d4a; border-radius: 12px; padding: 20px; }
+  .card h3 { font-size: 12px; color: #6677aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .card .value { font-size: 28px; font-weight: bold; }
+  .green { color: #4af0a0; }
+  .red { color: #f05a4a; }
+  .yellow { color: #f0c04a; }
+  .white { color: #ffffff; }
+  .section { padding: 0 24px 24px; }
+  .section h2 { font-size: 16px; color: #8899cc; margin-bottom: 16px; border-bottom: 1px solid #1e2d4a; padding-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 12px; font-size: 11px; color: #556699; text-transform: uppercase; border-bottom: 1px solid #1e2d4a; }
+  td { padding: 12px; font-size: 14px; border-bottom: 1px solid #111827; }
+  tr:hover { background: #151f35; }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; }
+  .badge-buy { background: #0d2e1a; color: #4af0a0; }
+  .badge-sell { background: #2e0d0d; color: #f05a4a; }
+  .badge-hold { background: #1a1e2e; color: #8899cc; }
+  .benchmark-bar { height: 6px; background: #1e2d4a; border-radius: 3px; margin-top: 6px; }
+  .benchmark-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+  .refresh-btn { background: #1a3a6a; color: #4af0a0; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .refresh-btn:hover { background: #1e4a8a; }
+  .tier-box { background: #0d1a2e; border: 1px solid #2a3a6a; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .tier-label { font-size: 12px; color: #6677aa; }
+  .tier-amount { font-size: 22px; color: #f0c04a; font-weight: bold; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr 1fr; } .card .value { font-size: 22px; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>⚡ FundLyte Trading Platform</h1>
+    <div class="status">Auto-trading | Multi-strategy | Risk-managed</div>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;">
+    <span class="live-badge" id="market-status">● LOADING</span>
+    <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Account Equity</h3>
+    <div class="value green" id="equity">--</div>
+  </div>
+  <div class="card">
+    <h3>Buying Power</h3>
+    <div class="value white" id="buying-power">--</div>
+  </div>
+  <div class="card">
+    <h3>Open Positions</h3>
+    <div class="value yellow" id="positions">--</div>
+  </div>
+  <div class="card">
+    <h3>Total Trades</h3>
+    <div class="value white" id="total-trades">--</div>
+  </div>
+  <div class="card">
+    <h3>Win Rate</h3>
+    <div class="value green" id="win-rate">--</div>
+    <div class="benchmark-bar"><div class="benchmark-fill" id="win-bar" style="width:0%;background:#4af0a0;"></div></div>
+  </div>
+  <div class="card">
+    <h3>Net P&L</h3>
+    <div class="value" id="net-pnl">--</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Capital Deployment Tiers</h2>
+  <div class="tier-box">
+    <div class="tier-label">Current Tier</div>
+    <div class="tier-amount" id="current-tier">Loading...</div>
+    <div class="tier-label" style="margin-top:8px;" id="tier-status">--</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Open Positions</h2>
+  <table>
+    <thead>
+      <tr><th>Symbol</th><th>Shares</th><th>Entry</th><th>Current</th><th>P&L</th><th>Change</th></tr>
+    </thead>
+    <tbody id="positions-table">
+      <tr><td colspan="6" style="color:#556699;text-align:center;">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Recent Signals</h2>
+  <table>
+    <thead>
+      <tr><th>Symbol</th><th>Strategy</th><th>Signal</th><th>Reason</th><th>Time</th></tr>
+    </thead>
+    <tbody id="signals-table">
+      <tr><td colspan="5" style="color:#556699;text-align:center;">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Trade History</h2>
+  <table>
+    <thead>
+      <tr><th>Symbol</th><th>Side</th><th>Shares</th><th>Price</th><th>Strategy</th><th>Status</th><th>P&L</th></tr>
+    </thead>
+    <tbody id="trades-table">
+      <tr><td colspan="7" style="color:#556699;text-align:center;">No trades yet</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+async function loadData() {
+  try {
+    const [account, positions, trades, benchmarks, signals] = await Promise.all([
+      fetch('/api/account').then(r => r.json()),
+      fetch('/api/positions').then(r => r.json()),
+      fetch('/api/trades').then(r => r.json()),
+      fetch('/api/benchmarks').then(r => r.json()),
+      fetch('/api/signals').then(r => r.json())
+    ]);
+
+    // Account
+    document.getElementById('equity').textContent = '$' + parseFloat(account.equity).toLocaleString('en-US', {minimumFractionDigits: 2});
+    document.getElementById('buying-power').textContent = '$' + parseFloat(account.buying_power).toLocaleString('en-US', {minimumFractionDigits: 2});
+    document.getElementById('market-status').textContent = account.market_open ? '● MARKET OPEN' : '○ MARKET CLOSED';
+    document.getElementById('market-status').style.color = account.market_open ? '#4af0a0' : '#f0c04a';
+
+    // Benchmarks
+    document.getElementById('total-trades').textContent = benchmarks.trades;
+    const wr = (benchmarks.win_rate * 100).toFixed(1);
+    document.getElementById('win-rate').textContent = wr + '%';
+    document.getElementById('win-bar').style.width = Math.min(wr * 2, 100) + '%';
+    const pnl = benchmarks.net_pnl || 0;
+    const pnlEl = document.getElementById('net-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+    pnlEl.className = 'value ' + (pnl >= 0 ? 'green' : 'red');
+
+    // Tier
+    document.getElementById('current-tier').textContent = 'Tier ' + benchmarks.tier + ' — $' + benchmarks.capital + ' deployed';
+    document.getElementById('tier-status').textContent = benchmarks.passed ? '✅ Benchmarks passed — ready to scale' : '⏳ Building track record...';
+    document.getElementById('positions').textContent = positions.length;
+
+    // Positions table
+    const posTable = document.getElementById('positions-table');
+    if (positions.length === 0) {
+      posTable.innerHTML = '<tr><td colspan="6" style="color:#556699;text-align:center;">No open positions</td></tr>';
+    } else {
+      posTable.innerHTML = positions.map(p => {
+        const pnl = parseFloat(p.unrealized_pl);
+        const pnlPct = parseFloat(p.unrealized_plpc) * 100;
+        return `<tr>
+          <td><strong>${p.symbol}</strong></td>
+          <td>${p.qty}</td>
+          <td>$${parseFloat(p.avg_entry_price).toFixed(2)}</td>
+          <td>$${parseFloat(p.current_price).toFixed(2)}</td>
+          <td class="${pnl >= 0 ? 'green' : 'red'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</td>
+          <td class="${pnl >= 0 ? 'green' : 'red'}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Signals table
+    const sigTable = document.getElementById('signals-table');
+    if (!signals || signals.length === 0) {
+      sigTable.innerHTML = '<tr><td colspan="5" style="color:#556699;text-align:center;">No recent signals</td></tr>';
+    } else {
+      sigTable.innerHTML = signals.slice(0, 20).map(s => `<tr>
+        <td><strong>${s.symbol}</strong></td>
+        <td>${s.strategy}</td>
+        <td><span class="badge badge-${s.signal}">${s.signal.toUpperCase()}</span></td>
+        <td style="font-size:12px;color:#8899cc;">${s.reason}</td>
+        <td style="font-size:12px;color:#556699;">${s.time}</td>
+      </tr>`).join('');
+    }
+
+    // Trades table
+    const tradeTable = document.getElementById('trades-table');
+    const allTrades = trades.slice().reverse();
+    if (allTrades.length === 0) {
+      tradeTable.innerHTML = '<tr><td colspan="7" style="color:#556699;text-align:center;">No trades yet</td></tr>';
+    } else {
+      tradeTable.innerHTML = allTrades.slice(0, 30).map(t => {
+        const pnl = t.pnl || 0;
+        return `<tr>
+          <td><strong>${t.symbol}</strong></td>
+          <td><span class="badge ${t.side === 'buy' ? 'badge-buy' : 'badge-sell'}">${t.side.toUpperCase()}</span></td>
+          <td>${t.shares}</td>
+          <td>$${parseFloat(t.price).toFixed(2)}</td>
+          <td style="font-size:12px;">${t.strategy}</td>
+          <td>${t.status}</td>
+          <td class="${pnl >= 0 ? 'green' : 'red'}">${pnl !== 0 ? (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) : '--'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+  } catch(e) {
+    console.error('Dashboard error:', e);
+  }
+}
+
+loadData();
+setInterval(loadData, 30000); // refresh every 30 seconds
+</script>
+</body>
+</html>

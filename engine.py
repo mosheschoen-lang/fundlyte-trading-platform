@@ -7,6 +7,9 @@ from strategies.momentum import get_signal as momentum_signal
 from strategies.mean_reversion import get_signal as reversion_signal
 from risk_manager import execute_buy, execute_sell, check_stop_losses
 from benchmark import print_report
+from trailing_stops import update_trailing_stops
+from market_regime import get_market_regime
+from signal_logger import log_signal
 from config import STOCK_WATCHLIST, CRYPTO_WATCHLIST
 from alpaca_client import get_account
 from datetime import datetime
@@ -21,54 +24,52 @@ def run_strategies():
     print(f"\n[ENGINE] Scanning at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     check_stop_losses()
+    update_trailing_stops()
+
+    regime = get_market_regime()
+    print(f"[REGIME] {regime['regime'].upper()} — {regime['reason']}")
+    active_strategies = regime.get("recommended_strategies", ["ema_crossover", "momentum", "mean_reversion"])
+    size_mult = regime.get("size_multiplier", 1.0)
+
+    if not active_strategies:
+        print(f"[REGIME] High volatility — sitting out. No new trades.")
+        return
 
     # Run EMA Crossover on all stocks
-    for symbol in STOCK_WATCHLIST:
-        signal = ema_signal(symbol)
-        if signal["signal"] == "buy":
-            print(f"[EMA] BUY signal: {symbol} — {signal['reason']}")
-            execute_buy(
-                symbol=symbol,
-                price=signal["price"],
-                stop_loss=signal["stop_loss"],
-                take_profit=signal["take_profit"],
-                strategy="ema_crossover",
-                reason=signal["reason"]
-            )
-        elif signal["signal"] == "sell":
-            print(f"[EMA] SELL signal: {symbol} — {signal['reason']}")
-            execute_sell(symbol, signal["reason"])
-        time.sleep(0.3)
+    if "ema_crossover" in active_strategies:
+        for symbol in STOCK_WATCHLIST:
+            signal = ema_signal(symbol)
+            log_signal(symbol, "ema_crossover", signal["signal"], signal.get("reason",""), signal.get("price"))
+            if signal["signal"] == "buy":
+                print(f"[EMA] BUY signal: {symbol} — {signal['reason']}")
+                execute_buy(symbol=symbol, price=signal["price"], stop_loss=signal["stop_loss"],
+                            take_profit=signal["take_profit"], strategy="ema_crossover", reason=signal["reason"])
+            elif signal["signal"] == "sell":
+                print(f"[EMA] SELL signal: {symbol} — {signal['reason']}")
+                execute_sell(symbol, signal["reason"])
+            time.sleep(0.3)
 
     # Run Momentum on all stocks
-    for symbol in STOCK_WATCHLIST:
-        signal = momentum_signal(symbol)
-        if signal["signal"] == "buy":
-            print(f"[MOMENTUM] BUY signal: {symbol} — {signal['reason']}")
-            execute_buy(
-                symbol=symbol,
-                price=signal["price"],
-                stop_loss=signal["stop_loss"],
-                take_profit=signal["take_profit"],
-                strategy="momentum",
-                reason=signal["reason"]
-            )
-        time.sleep(0.3)
+    if "momentum" in active_strategies:
+        for symbol in STOCK_WATCHLIST:
+            signal = momentum_signal(symbol)
+            log_signal(symbol, "momentum", signal["signal"], signal.get("reason",""), signal.get("price"))
+            if signal["signal"] == "buy":
+                print(f"[MOMENTUM] BUY signal: {symbol} — {signal['reason']}")
+                execute_buy(symbol=symbol, price=signal["price"], stop_loss=signal["stop_loss"],
+                            take_profit=signal["take_profit"], strategy="momentum", reason=signal["reason"])
+            time.sleep(0.3)
 
     # Run Mean Reversion on stocks
-    for symbol in ["AAPL", "MSFT", "AMZN", "SPY", "QQQ"]:
-        signal = reversion_signal(symbol)
-        if signal["signal"] == "buy":
-            print(f"[REVERSION] BUY signal: {symbol} — {signal['reason']}")
-            execute_buy(
-                symbol=symbol,
-                price=signal["price"],
-                stop_loss=signal["stop_loss"],
-                take_profit=signal["take_profit"],
-                strategy="mean_reversion",
-                reason=signal["reason"]
-            )
-        time.sleep(0.3)
+    if "mean_reversion" in active_strategies:
+        for symbol in ["AAPL", "MSFT", "AMZN", "SPY", "QQQ"]:
+            signal = reversion_signal(symbol)
+            log_signal(symbol, "mean_reversion", signal["signal"], signal.get("reason",""), signal.get("price"))
+            if signal["signal"] == "buy":
+                print(f"[REVERSION] BUY signal: {symbol} — {signal['reason']}")
+                execute_buy(symbol=symbol, price=signal["price"], stop_loss=signal["stop_loss"],
+                            take_profit=signal["take_profit"], strategy="mean_reversion", reason=signal["reason"])
+            time.sleep(0.3)
 
     # Run EMA on crypto (24/7)
     for symbol in CRYPTO_WATCHLIST:

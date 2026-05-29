@@ -9,9 +9,9 @@ from risk_manager import execute_buy, execute_sell, check_stop_losses
 from benchmark import print_report
 from trailing_stops import update_trailing_stops
 from market_regime import get_market_regime
-from options_layer import execute_options_buy, is_strong_signal
+from options_layer import execute_options_buy, is_strong_signal, check_scale_outs
 from signal_logger import log_signal
-from config import STOCK_WATCHLIST, CRYPTO_WATCHLIST
+from config import STOCK_WATCHLIST, SPECULATIVE_WATCHLIST, CRYPTO_WATCHLIST
 from alpaca_client import get_account
 from datetime import datetime
 import time
@@ -26,6 +26,7 @@ def run_strategies():
 
     check_stop_losses()
     update_trailing_stops()
+    check_scale_outs()  # auto-sell options in chunks as they gain
 
     regime = get_market_regime()
     print(f"[REGIME] {regime['regime'].upper()} — {regime['reason']}")
@@ -87,6 +88,24 @@ def run_strategies():
                 print(f"[REVERSION] BUY signal: {symbol} — {signal['reason']}")
                 execute_buy(symbol=symbol, price=signal["price"], stop_loss=signal["stop_loss"],
                             take_profit=signal["take_profit"], strategy="mean_reversion", reason=signal["reason"])
+            time.sleep(0.3)
+
+    # Scan speculative watchlist for options opportunities (Mike's primary style)
+    if "momentum" in active_strategies:
+        for symbol in SPECULATIVE_WATCHLIST:
+            signal = momentum_signal(symbol)
+            log_signal(symbol, "momentum_speculative", signal["signal"], signal.get("reason",""), signal.get("price"))
+            if signal["signal"] == "buy":
+                momentum = signal.get("momentum", 0) / 100
+                vol_ratio = signal.get("volume_ratio", 0)
+                print(f"[SPECULATIVE] Signal on {symbol} — {signal['reason']}")
+                execute_options_buy(
+                    symbol=symbol,
+                    current_price=signal["price"],
+                    momentum=momentum,
+                    volume_ratio=vol_ratio,
+                    reason=signal["reason"]
+                )
             time.sleep(0.3)
 
     # Run EMA on crypto (24/7)

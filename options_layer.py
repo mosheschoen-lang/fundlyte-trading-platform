@@ -28,15 +28,16 @@ OPTIONS_LOG = "options_trades.json"
 MOMENTUM_THRESHOLD = 0.07      # 7%+ momentum on 10-day return
 VOLUME_RATIO_THRESHOLD = 1.8   # 1.8x average volume = real conviction
 
-# Contract selection
-OTM_PCT = 0.05                 # buy strike 5% above current price
-MIN_EXPIRY_DAYS = 14           # at least 2 weeks out
-MAX_EXPIRY_DAYS = 35           # no more than 5 weeks out
+# Contract selection — tuned to Mike's style (aggressive OTM, 2-3 months out)
+from config import OPTIONS_OTM_PCT, OPTIONS_MIN_EXPIRY_DAYS, OPTIONS_MAX_EXPIRY_DAYS, OPTIONS_MAX_SPEND_PCT, OPTIONS_SCALE_OUT_LEVELS
+OTM_PCT = OPTIONS_OTM_PCT
+MIN_EXPIRY_DAYS = OPTIONS_MIN_EXPIRY_DAYS
+MAX_EXPIRY_DAYS = OPTIONS_MAX_EXPIRY_DAYS
 
-# Sizing — max % of account per options trade
-MAX_OPTIONS_SPEND = 0.03       # spend up to 3% of account per trade
+# Sizing — Mike concentrates, up to 15% per trade
+MAX_OPTIONS_SPEND = OPTIONS_MAX_SPEND_PCT
 MIN_CONTRACTS = 1
-MAX_CONTRACTS = 10
+MAX_CONTRACTS = 50  # Mike bought 38 at once — allow concentration
 
 
 def load_options_trades() -> list:
@@ -182,3 +183,74 @@ def get_open_options() -> list:
     """Returns all currently open options trades. Used by dashboard."""
     trades = load_options_trades()
     return [t for t in trades if t.get("status") == "open"]
+
+
+def check_scale_outs():
+    """
+    Mike's strategy: sell portions as the trade moves in your favor.
+    Sell 25% at +100%, another 25% at +200%, another 25% at +400%.
+    Let the last 25% ride.
+
+    Call this every scan cycle alongside check_stop_losses().
+    """
+    trades = load_options_trades()
+    positions = {p.symbol: p for p in trading_client.get_all_positions()}
+
+    scaled = 0
+    for trade in trades:
+        if trade.get("status") != "open":
+            continue
+
+        occ = trade.get("occ_symbol")
+        if not occ or occ not in positions:
+            continue
+
+        position = positions[occ]
+        entry_price = trade.get("entry_premium")
+        if not entry_price:
+            continue
+
+        current_price = float(position.current_price)
+        gain_pct = (current_price - entry_price) / entry_price * 100
+        contracts_held = int(position.qty)
+        already_scaled = trade.get("scale_outs_done", [])
+
+        for level in OPTIONS_SCALE_OUT_LEVELS:
+            target = level["at_gain_pct"]
+            fraction = level["sell_fraction"]
+
+            if gain_pct >= target and target not in already_scaled:
+                contracts_to_sell = max(1, int(contracts_held * fraction))
+
+                try:
+                    from alpaca.trading.requests import MarketOrderRequest
+                    from alpaca.trading.enums import OrderSide, TimeInForce
+                    trading_client.submit_order(
+                        MarketOrderRequest(
+                            symbol=occ,
+                            qty=contracts_to_sell,
+                            side=OrderSide.SELL,
+                            time_in_force=TimeInForce.DAY
+                        )
+                    )
+                    if "scale_outs_done" not in trade:
+                        trade["scale_outs_done"] = []
+                    trade["scale_outs_done"].append(target)
+
+                    print(
+                        f"[SCALE OUT] {trade['underlying']} {occ} — "
+                        f"sold {contracts_to_sell} contracts at +{gain_pct:.0f}% gain "
+                        f"(target was +{target}%)"
+                    )
+                    scaled += 1
+                except Exception as e:
+                    print(f"[SCALE OUT] Failed for {occ}: {e}")
+
+    if scaled:
+        save_options_trades_list(trades)
+    return scaled
+
+
+def save_options_trades_list(trades: list):
+    with open(OPTIONS_LOG, "w") as f:
+        json.dump(trades, f, indent=2, default=str)

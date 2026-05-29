@@ -6,6 +6,8 @@ from alpaca_client import get_equity, get_positions, trading_client
 from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from config import MAX_RISK_PER_TRADE, MAX_POSITIONS, MAX_POSITION_SIZE
+from volatility_filter import check_volatility
+from correlation_guard import check_correlation
 import json, os
 from datetime import datetime
 
@@ -45,6 +47,20 @@ def execute_buy(symbol: str, price: float, stop_loss: float, take_profit: float,
     allowed, msg = can_trade()
     if not allowed:
         print(f"[RISK] Trade blocked: {msg}")
+        return None
+
+    # Volatility filter — block if market or stock vol is too high
+    vol_check = check_volatility(symbol)
+    if not vol_check["allowed"]:
+        print(f"[RISK] Volatility block on {symbol}: {vol_check['reason']}")
+        return None
+    if vol_check["caution"]:
+        print(f"[RISK] Vol caution on {symbol}: {vol_check['reason']}")
+
+    # Correlation guard — block if a correlated position is already open
+    corr_check = check_correlation(symbol)
+    if not corr_check["allowed"]:
+        print(f"[RISK] Correlation block on {symbol}: {corr_check['reason']}")
         return None
 
     shares = calculate_shares(price, stop_loss)

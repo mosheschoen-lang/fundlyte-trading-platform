@@ -9,6 +9,7 @@ from risk_manager import execute_buy, execute_sell, check_stop_losses
 from benchmark import print_report
 from trailing_stops import update_trailing_stops
 from market_regime import get_market_regime
+from options_layer import execute_options_buy, is_strong_signal
 from signal_logger import log_signal
 from config import STOCK_WATCHLIST, CRYPTO_WATCHLIST
 from alpaca_client import get_account
@@ -49,13 +50,30 @@ def run_strategies():
                 execute_sell(symbol, signal["reason"])
             time.sleep(0.3)
 
-    # Run Momentum on all stocks
+    # Run Momentum on all stocks — route strong signals to options layer first
     if "momentum" in active_strategies:
         for symbol in STOCK_WATCHLIST:
             signal = momentum_signal(symbol)
             log_signal(symbol, "momentum", signal["signal"], signal.get("reason",""), signal.get("price"))
             if signal["signal"] == "buy":
                 print(f"[MOMENTUM] BUY signal: {symbol} — {signal['reason']}")
+                momentum = signal.get("momentum", 0) / 100  # stored as percentage, convert to decimal
+                vol_ratio = signal.get("volume_ratio", 0)
+
+                # Try options first if signal is strong enough
+                if is_strong_signal(momentum, vol_ratio):
+                    options_result = execute_options_buy(
+                        symbol=symbol,
+                        current_price=signal["price"],
+                        momentum=momentum,
+                        volume_ratio=vol_ratio,
+                        reason=signal["reason"]
+                    )
+                    if options_result:
+                        time.sleep(0.3)
+                        continue  # options order placed — skip stock buy
+
+                # Fallback to stock buy if options not available or signal too weak
                 execute_buy(symbol=symbol, price=signal["price"], stop_loss=signal["stop_loss"],
                             take_profit=signal["take_profit"], strategy="momentum", reason=signal["reason"])
             time.sleep(0.3)
